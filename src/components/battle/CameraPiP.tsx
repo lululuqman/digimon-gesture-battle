@@ -5,8 +5,9 @@ import { Video, VideoOff } from 'lucide-react';
 
 export const CameraPiP = () => {
   const { videoRef, gesture, hands, isLoading } = useMediaPipe();
-  const setGestures = useGameStore((s) => s.setGestures);
+  const setPlayerGesture = useGameStore((s) => s.setPlayerGesture);
   const playerGesture = useGameStore((s) => s.playerGesture);
+  const isProcessingTurn = useGameStore((s) => s.isProcessingTurn);
   const [isVisible, setIsVisible] = useState(true);
   const [videoSize, setVideoSize] = useState<{ width: number; height: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,10 +37,10 @@ export const CameraPiP = () => {
 
   useEffect(() => {
     // Update store with detected gesture
-    if (gesture !== playerGesture) {
-      setGestures(gesture, 'none'); // enemy gesture handled elsewhere
+    if (!isProcessingTurn && gesture !== playerGesture) {
+      setPlayerGesture(gesture);
     }
-  }, [gesture, playerGesture, setGestures]);
+  }, [gesture, playerGesture, setPlayerGesture, isProcessingTurn]);
 
   // Helper to map gesture to display text and color
   const getGestureDisplay = (g: string) => {

@@ -32,7 +32,7 @@ export const TitleScreen = () => {
       </motion.div>
 
       <p className="mt-8 text-slate-500 text-sm animate-pulse">
-        Portrait mode recommended
+        Fan made by lululuqman
       </p>
     </div>
   );

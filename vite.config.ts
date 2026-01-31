@@ -7,9 +7,14 @@ export default defineConfig({
     react(),
     {
       name: 'suppress-mediapipe-sourcemap',
+      enforce: 'pre',
       transform(code, id) {
-        if (id.includes('@mediapipe/tasks-vision')) {
-          return code.replace(/\/\/# sourceMappingURL=.*/, '');
+        // Use consistent path checking that works on Windows and Posix
+        if (id.includes('mediapipe') && id.includes('tasks-vision')) {
+          return {
+            code: code.replace(/^\/\/[#@] sourceMappingURL=.*$/gm, ''),
+            map: null
+          };
         }
       }
     }
