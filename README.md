@@ -18,7 +18,7 @@ A cutting-edge, mobile-first web game that brings Digimon battles to life using 
 
 ## 🔐 Security & Setup
 To run this locally, create a `.env.local` file in the root:
-
+```
 digimon-gesture-battle/
 ├── .env.local              # Local secrets (NEVER COMMIT THIS)
 ├── .gitignore              # Ignores node_modules, .env, dist, etc.
@@ -72,3 +72,4 @@ digimon-gesture-battle/
 │   └── functions/          # Serverless Edge Functions (Deno)
 │       ├── stripe-checkout/
 │       └── stripe-webhook/
+```
