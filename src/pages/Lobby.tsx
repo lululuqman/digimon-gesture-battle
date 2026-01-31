@@ -4,6 +4,7 @@ import { fetchDigimonByLevel } from '../api/digimon';
 import { useEffect, useState } from 'react';
 import { Digimon } from '../types';
 import { Sparkles } from 'lucide-react';
+import { createCheckoutSession } from '../api/stripe';
 
 export const Lobby = () => {
   const { playerDigimon, setEnemyDigimon, setGameState } = useGameStore();
@@ -23,6 +24,11 @@ export const Lobby = () => {
     }
   };
 
+  const handlePremiumClick = () => {
+  const PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID; 
+  createCheckoutSession(PRICE_ID);
+};
+
   if (!playerDigimon) {
     setGameState('selection');
     return null;
@@ -31,7 +37,10 @@ export const Lobby = () => {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-4">
       <div className="absolute top-4 right-4">
-        <button className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/50 rounded-full text-yellow-500 text-sm font-bold">
+        <button 
+          onClick={handlePremiumClick}
+          className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/50 rounded-full text-yellow-500 text-sm font-bold hover:bg-yellow-500/20 transition-colors"
+        >
           <Sparkles size={16} />
           GET PREMIUM ($1)
         </button>
