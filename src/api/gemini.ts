@@ -1,7 +1,7 @@
 import { Gesture } from '../types';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const MODEL = 'gemini-1.5-flash'; // 2.5 Flash isn't public yet, using 1.5 Flash as proxy
+const MODEL = 'gemini-2.5-flash'; // 2.5 Flash isn't public yet, using 1.5 Flash as proxy
 
 export const getBattleCommentary = async (
   playerDigimon: string,

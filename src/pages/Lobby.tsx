@@ -10,6 +10,18 @@ export const Lobby = () => {
   const { playerDigimon, setEnemyDigimon, setGameState } = useGameStore();
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    // Check for Stripe return query params
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('success')) {
+      alert('Payment successful! Premium features unlocked (simulation).');
+      // Here you would typically update the user's state in your store/backend
+    }
+    if (query.get('canceled')) {
+      alert('Payment canceled.');
+    }
+  }, []);
+
   const startBattle = async () => {
     setLoading(true);
     try {
@@ -25,8 +37,8 @@ export const Lobby = () => {
   };
 
   const handlePremiumClick = () => {
-  const PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID; 
-  createCheckoutSession(PRICE_ID);
+  const PAYMENT_LINK = import.meta.env.VITE_STRIPE_PAYMENT_LINK; 
+  createCheckoutSession(PAYMENT_LINK);
 };
 
   if (!playerDigimon) {
