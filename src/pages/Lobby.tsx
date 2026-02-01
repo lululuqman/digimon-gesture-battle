@@ -112,6 +112,7 @@ export const Lobby = () => {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [showCreditsModal, setShowCreditsModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterLevel, setFilterLevel] = useState<'All' | 'Rookie' | 'Champion' | 'Ultimate' | 'Mega'>('All');
 
   // Multiplayer State
   const [mpMode, setMpMode] = useState<'menu' | 'host' | 'join'>('menu');
@@ -189,7 +190,9 @@ export const Lobby = () => {
         try {
           const rookies = await fetchDigimonByLevel('Rookie');
           const champions = await fetchDigimonByLevel('Champion');
-          setGalleryDigimon([...rookies, ...champions].slice(0, 20)); // Limit to 20 for now
+          const ultimates = await fetchDigimonByLevel('Ultimate');
+          const megas = await fetchDigimonByLevel('Mega');
+          setGalleryDigimon([...rookies, ...champions, ...ultimates, ...megas]);
         } catch (e) {
           console.error("Failed to load gallery", e);
         }
@@ -558,45 +561,88 @@ export const Lobby = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="flex flex-col h-full bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-6"
               >
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-2xl font-bold">Digidex</h3>
-                    <p className="text-xs text-slate-400">Seen: <span className="text-orange-400">{encounteredDigimon.length}</span> / {galleryDigimon.length || '?'}</p>
+                    <p className="text-xs text-slate-400">Seen: <span className="text-orange-400">{galleryDigimon.length}</span> / {galleryDigimon.length || '?'}</p>
                   </div>
-                  <button onClick={() => setActiveView('menu')} className="text-slate-400 hover:text-white text-sm">Back</button>
+                  <button onClick={() => { setActiveView('menu'); setSearchTerm(''); setFilterLevel('All'); }} className="text-slate-400 hover:text-white text-sm">Back</button>
+                </div>
+
+                <div className="flex flex-col gap-3 mb-4">
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Search Digimon..." 
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full bg-slate-950/50 border border-slate-700 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-orange-500 transition-colors"
+                    />
+                  </div>
+
+                  {/* Filter Buttons */}
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-700">
+                    {(['All', 'Rookie', 'Champion', 'Ultimate', 'Mega'] as const).map(level => (
+                      <button
+                        key={level}
+                        onClick={() => setFilterLevel(level)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition-all border ${
+                          filterLevel === level 
+                          ? 'bg-orange-500 text-white border-orange-500' 
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-3 gap-3">
-                  {galleryDigimon.map((d, i) => {
-                    const isUnlocked = encounteredDigimon.includes(d.name);
+                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {galleryDigimon
+                    .filter(d => 
+                      (filterLevel === 'All' || d.level === filterLevel) &&
+                      d.name.toLowerCase().includes(searchTerm.toLowerCase())
+                    )
+                    .map((d, i) => {
+                    const isUnlocked = true; // encounteredDigimon.includes(d.name);
                     return (
                       <button 
                         key={i} 
                         onClick={() => isUnlocked && setViewingDigimon(d)}
-                        className={`p-2 rounded-xl border flex flex-col items-center relative overflow-hidden transition-all text-left ${
+                        className={`p-4 rounded-xl border flex flex-col items-center relative overflow-hidden transition-all text-left group ${
                         isUnlocked 
-                        ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-700 cursor-pointer' 
-                        : 'bg-slate-900/50 border-slate-800 cursor-not-allowed'
+                        ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-700 cursor-pointer hover:border-orange-500/50' 
+                        : 'bg-slate-900/50 border-slate-800 cursor-not-allowed opacity-60'
                       }`}>
                         {isUnlocked ? (
                           <>
-                            <img src={d.img} alt={d.name} className="w-16 h-16 object-contain mb-2" />
-                            <span className="text-[10px] text-center font-bold text-slate-300">{d.name}</span>
-                            <span className="text-[8px] text-slate-500 uppercase">{d.level}</span>
+                            <div className="w-24 h-24 mb-3 relative">
+                                <img src={d.img} alt={d.name} className="w-full h-full object-contain" />
+                            </div>
+                            <span className="text-sm text-center font-bold text-slate-300 leading-tight group-hover:text-orange-400 mb-1">{d.name}</span>
+                            <span className={`text-[10px] uppercase px-2 py-0.5 rounded-full ${
+                              d.level === 'Rookie' ? 'bg-green-500/20 text-green-400' :
+                              d.level === 'Champion' ? 'bg-blue-500/20 text-blue-400' :
+                              d.level === 'Ultimate' ? 'bg-purple-500/20 text-purple-400' :
+                              'bg-orange-500/20 text-orange-400'
+                            }`}>{d.level}</span>
                           </>
                         ) : (
                           <>
-                            <div className="w-16 h-16 mb-2 flex items-center justify-center opacity-20">
-                               <ImageIcon size={32} />
+                            <div className="w-24 h-24 mb-3 flex items-center justify-center opacity-20">
+                               <ImageIcon size={48} />
                             </div>
-                            <span className="text-[10px] text-center font-bold text-slate-600">???</span>
-                            <span className="text-[8px] text-slate-700 uppercase">UNKNOWN</span>
+                            <span className="text-sm text-center font-bold text-slate-600 mb-1">???</span>
+                            <span className="text-[10px] text-slate-700 uppercase px-2 py-0.5">LOCKED</span>
                           </>
                         )}
                       </button>
                     );
                   })}
-                  {galleryDigimon.length === 0 && <div className="col-span-3 text-center text-slate-500">Loading Digimon Data...</div>}
+                  {galleryDigimon.length === 0 && <div className="col-span-full text-center text-slate-500 py-8">Loading Digimon Data...</div>}
                 </div>
               </motion.div>
             )}
