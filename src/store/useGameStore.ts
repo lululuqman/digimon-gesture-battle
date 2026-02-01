@@ -147,6 +147,17 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: 'digimon-battle-storage',
+      partialize: (state) => ({
+        // Persist only these fields
+        user: state.user,
+        userDigimon: state.userDigimon,
+        entitlement: state.entitlement,
+        encounteredDigimon: state.encounteredDigimon,
+        unlockedGalleryArts: state.unlockedGalleryArts,
+        playerWinStreak: state.playerWinStreak,
+        // Optional: persist playerDigimon if you want to remember the last partner
+        // playerDigimon: state.playerDigimon, 
+      }),
     }
   )
 );

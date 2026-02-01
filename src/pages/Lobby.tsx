@@ -3,7 +3,7 @@ import { fetchDigimonByLevel } from '../api/digimon';
 import { Digimon } from '../types';
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
-import { Sparkles, Swords, Users, Image as ImageIcon, Map, Trophy, Lock, Download, X, Loader2, Info, Search } from 'lucide-react';
+import { Sparkles, Swords, Users, Image as ImageIcon, Map, Trophy, Lock, Download, X, Loader2, Info, Search, LogOut } from 'lucide-react';
 import { createCheckoutSession } from '../api/stripe';
 import { MatchmakingService } from '../services/matchmaking';
 
@@ -505,14 +505,24 @@ export const Lobby = () => {
                   <Trophy className="self-end text-slate-600 group-hover:text-yellow-400 transition-colors" size={24} />
                 </button>
 
-                {/* Credits / Misc */}
-                <button 
-                  onClick={() => setShowCreditsModal(true)}
-                  className="col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-slate-500 hover:text-slate-300 transition-colors hover:bg-slate-900/80 cursor-pointer"
-                >
-                  <span className="text-sm font-medium">Credits</span>
-                  <Info size={16} className="text-slate-600" />
-                </button>
+                {/* Credits & Quit */}
+                <div className="col-span-2 flex gap-4">
+                  <button 
+                    onClick={() => setShowCreditsModal(true)}
+                    className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-slate-500 hover:text-slate-300 transition-colors hover:bg-slate-900/80 cursor-pointer"
+                  >
+                    <span className="text-sm font-medium">Credits</span>
+                    <Info size={16} className="text-slate-600" />
+                  </button>
+
+                  <button 
+                    onClick={() => setGameState('title')}
+                    className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-slate-500 hover:text-red-400 transition-colors hover:bg-slate-900/80 cursor-pointer group"
+                  >
+                    <span className="text-sm font-medium">Quit to Title</span>
+                    <LogOut size={16} className="text-slate-600 group-hover:text-red-400" />
+                  </button>
+                </div>
               </motion.div>
             )}
 
