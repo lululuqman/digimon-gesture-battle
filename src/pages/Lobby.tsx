@@ -1,10 +1,11 @@
 import { useGameStore, BattleStage } from '../store/useGameStore';
 import { fetchDigimonByLevel } from '../api/digimon';
 import { Digimon } from '../types';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
-import { Sparkles, Swords, Users, Image as ImageIcon, Map, Trophy, Lock, Download, X } from 'lucide-react';
+import { Sparkles, Swords, Users, Image as ImageIcon, Map, Trophy, Lock, Download, X, Loader2, Info, Search } from 'lucide-react';
 import { createCheckoutSession } from '../api/stripe';
+import { MatchmakingService } from '../services/matchmaking';
 
 const STAGES: { id: BattleStage; name: string; color: string; desc: string }[] = [
   { id: 'arena', name: 'Digital Arena', color: 'from-slate-800 to-slate-900', desc: 'Standard battleground.' },
@@ -102,12 +103,85 @@ const GalleryCardView = ({ digimon, onClose }: { digimon: Digimon; onClose: () =
 };
 
 export const Lobby = () => {
-  const { playerDigimon, setPlayerDigimon, setEnemyDigimon, setGameState, selectedStage, setSelectedStage, encounteredDigimon, unlockDigimon, unlockedGalleryArts, resetBattle } = useGameStore();
+  const { playerDigimon, setPlayerDigimon, setEnemyDigimon, setGameState, selectedStage, setSelectedStage, encounteredDigimon, unlockDigimon, unlockedGalleryArts, resetBattle, entitlement, setEntitlement, playerId, setMultiplayerState } = useGameStore();
   const [loading, setLoading] = useState(false);
   const [galleryDigimon, setGalleryDigimon] = useState<Digimon[]>([]);
-  const [activeView, setActiveView] = useState<'menu' | 'stages' | 'gallery' | 'digidex'>('menu');
+  const [activeView, setActiveView] = useState<'menu' | 'stages' | 'gallery' | 'digidex' | 'multiplayer'>('menu');
   const [viewingDigimon, setViewingDigimon] = useState<Digimon | null>(null);
   const [viewingGalleryItem, setViewingGalleryItem] = useState<Digimon | null>(null);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showCreditsModal, setShowCreditsModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Multiplayer State
+  const [mpMode, setMpMode] = useState<'menu' | 'host' | 'join'>('menu');
+  const [roomPin, setRoomPin] = useState<string | null>(null);
+  const [joinPin, setJoinPin] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchStatus, setSearchStatus] = useState('');
+  const currentRoomIdRef = useRef<string | null>(null);
+
+  const handleCreateRoom = async () => {
+    setIsSearching(true);
+    setSearchStatus('Creating room...');
+    try {
+      const room = await MatchmakingService.createHostRoom(playerId);
+      currentRoomIdRef.current = room.id;
+      setRoomPin(room.pin);
+      setMpMode('host');
+      setSearchStatus('Waiting for opponent...');
+      
+      const subscription = MatchmakingService.subscribeToRoom(room.id, (updatedRoom) => {
+         if (updatedRoom.status === 'active' && updatedRoom.player2_id) {
+           // Match found!
+           subscription.unsubscribe();
+           setMultiplayerState({
+             isMultiplayer: true,
+             roomId: updatedRoom.id,
+             opponentId: updatedRoom.player2_id
+           });
+           setGameState('battle');
+         }
+      });
+    } catch (e) {
+      console.error(e);
+      setSearchStatus('Error creating room.');
+      setIsSearching(false);
+    }
+  };
+
+  const handleJoinRoom = async () => {
+    if (joinPin.length !== 6) return;
+    setIsSearching(true);
+    setSearchStatus('Joining room...');
+    try {
+      const room = await MatchmakingService.joinRoom(playerId, joinPin);
+      
+      setSearchStatus('Connected! Starting...');
+      setMultiplayerState({
+        isMultiplayer: true,
+        roomId: room.id,
+        opponentId: room.player1_id
+      });
+      setTimeout(() => setGameState('battle'), 1000);
+    } catch (e) {
+      console.error(e);
+      setSearchStatus('Room not found or full.');
+      setIsSearching(false);
+    }
+  };
+
+  const handleCancelSearch = async () => {
+     if (currentRoomIdRef.current && mpMode === 'host') {
+       await MatchmakingService.cancelMatchSearch(currentRoomIdRef.current);
+     }
+     currentRoomIdRef.current = null;
+     setRoomPin(null);
+     setMpMode('menu');
+     setIsSearching(false);
+     setSearchStatus('');
+     setJoinPin('');
+  };
 
   useEffect(() => {
     if ((activeView === 'gallery' || activeView === 'digidex') && galleryDigimon.length === 0) {
@@ -126,8 +200,16 @@ export const Lobby = () => {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    if (query.get('success')) alert('Payment successful! Premium features unlocked (simulation).');
-    if (query.get('canceled')) alert('Payment canceled.');
+    if (query.get('success')) {
+      alert('Thank you for your support! ☕');
+      setEntitlement({
+        user_id: 'local-user',
+        product_id: 'full_app', // Using same ID for "supporter" status
+        active: true,
+        updated_at: new Date().toISOString()
+      });
+    }
+    if (query.get('canceled')) alert('Donation canceled.');
   }, []);
 
   const startBattle = async () => {
@@ -147,15 +229,37 @@ export const Lobby = () => {
     }
   };
 
-  const handlePremiumClick = () => {
-    const PAYMENT_LINK = import.meta.env.VITE_STRIPE_PAYMENT_LINK; 
-    createCheckoutSession(PAYMENT_LINK);
+  const handleSupportClick = () => {
+    setShowSupportModal(true);
+  };
+
+  const processDonation = () => {
+     // Check if env var is set, otherwise mock
+     const PAYMENT_LINK = import.meta.env.VITE_STRIPE_PAYMENT_LINK; 
+     if (PAYMENT_LINK) {
+        createCheckoutSession(PAYMENT_LINK);
+     } else {
+        // Simulation for Development
+        const confirm = window.confirm("No Stripe Link configured. Simulate successful donation?");
+        if (confirm) {
+            setEntitlement({
+                user_id: 'local-user',
+                product_id: 'full_app',
+                active: true,
+                updated_at: new Date().toISOString()
+            });
+            setShowSupportModal(false);
+            alert("Thanks for the coffee! ☕ (Dev Mode)");
+        }
+     }
   };
 
   if (!playerDigimon) {
     setGameState('selection');
     return null;
   }
+  
+  const isSupporter = entitlement?.product_id === 'full_app' && entitlement?.active;
 
   return (
     <div className={`flex flex-col items-center min-h-screen text-white p-4 relative overflow-hidden transition-all duration-700 bg-gradient-to-br ${STAGES.find(s => s.id === selectedStage)?.color || 'from-slate-900 to-black'}`}>
@@ -163,19 +267,122 @@ export const Lobby = () => {
       {/* Background Particles/Grid Effect */}
       <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:40px_40px]"></div>
 
+      {/* Support Modal */}
+      <AnimatePresence>
+        {showSupportModal && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowSupportModal(false)}
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+            >
+                <motion.div 
+                    initial={{ scale: 0.9, y: 20 }}
+                    animate={{ scale: 1, y: 0 }}
+                    exit={{ scale: 0.9, y: 20 }}
+                    onClick={e => e.stopPropagation()}
+                    className="bg-slate-900 border border-yellow-500 rounded-3xl p-8 max-w-md w-full relative shadow-[0_0_50px_rgba(234,179,8,0.2)]"
+                >
+                    <button onClick={() => setShowSupportModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><X /></button>
+                    
+                    <div className="flex flex-col items-center text-center gap-4">
+                        <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full flex items-center justify-center shadow-lg mb-2">
+                            <Sparkles className="text-white" size={32} />
+                        </div>
+                        <h2 className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500">SUPPORT DEV</h2>
+                        <p className="text-slate-300 text-sm leading-relaxed font-medium">
+                            Enjoying this gesture recognition demo?
+                        </p>
+                        <p className="text-slate-400 text-sm leading-relaxed">
+                            ☕ Support future development<br/>
+                            (All features free - donations appreciated but not required)
+                        </p>
+                        
+                        <button 
+                            onClick={processDonation}
+                            className="w-full py-4 bg-gradient-to-r from-yellow-500 to-orange-600 rounded-xl font-bold text-lg text-white shadow-lg hover:shadow-orange-500/25 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 mt-4"
+                        >
+                            <Sparkles size={20} />
+                            DONATE COFFEE
+                        </button>
+                        <p className="text-[10px] text-slate-600">Secure payment via Stripe.</p>
+                    </div>
+                </motion.div>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Credits Modal */}
+      <AnimatePresence>
+        {showCreditsModal && (
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowCreditsModal(false)}
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+            >
+                <motion.div 
+                    initial={{ scale: 0.9, y: 20 }}
+                    animate={{ scale: 1, y: 0 }}
+                    exit={{ scale: 0.9, y: 20 }}
+                    onClick={e => e.stopPropagation()}
+                    className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-md w-full relative shadow-[0_0_50px_rgba(100,116,139,0.2)]"
+                >
+                    <button onClick={() => setShowCreditsModal(false)} className="absolute top-4 right-4 text-slate-500 hover:text-white"><X /></button>
+                    
+                    <div className="flex flex-col items-center text-center gap-6">
+                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center shadow-lg mb-2 border border-slate-700">
+                            <Info className="text-slate-300" size={32} />
+                        </div>
+                        <h2 className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-slate-200 to-slate-400">CREDITS</h2>
+                        
+                        <div className="w-full space-y-4">
+                            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+                                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-2">Contributors</h3>
+                                <p className="text-white font-medium">Lead Developer: lululuqman</p>
+                                <p className="text-slate-500 text-xs">AI Pair Programmer: Trae (Gemini)</p>
+                            </div>
+
+                            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50">
+                                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-2">Tech Stack</h3>
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    {['React', 'TypeScript', 'Vite', 'Tailwind CSS', 'Framer Motion', 'Zustand', 'Supabase', 'Stripe', 'MediaPipe', 'Gemini API'].map((tech) => (
+                                        <span key={tech} className="px-2 py-1 bg-slate-700 rounded-md text-[10px] text-slate-300 font-mono border border-slate-600">
+                                            {tech}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Bar */}
       <div className="w-full max-w-6xl flex justify-between items-center z-10 mb-8">
         <div className="flex items-center gap-2">
            <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center font-black italic text-xl shadow-lg">D</div>
            <span className="font-bold text-xl tracking-tighter italic opacity-80">DIGI-BATTLE</span>
         </div>
-        <button 
-          onClick={handlePremiumClick}
-          className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/50 rounded-full text-yellow-500 text-xs font-bold hover:bg-yellow-500/20 transition-colors backdrop-blur-sm"
-        >
-          <Sparkles size={14} />
-          PREMIUM ($1)
-        </button>
+        {!isSupporter && (
+          <button 
+            onClick={handleSupportClick}
+            className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border border-yellow-500/50 rounded-full text-yellow-500 text-xs font-bold hover:bg-yellow-500/20 transition-colors backdrop-blur-sm"
+          >
+            <Sparkles size={14} />
+            SUPPORT DEV
+          </button>
+        )}
+        {isSupporter && (
+           <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/20 border border-yellow-500/50 rounded-full text-yellow-400 text-xs font-bold backdrop-blur-sm">
+             <Trophy size={14} />
+             SUPPORTER
+           </div>
+        )}
       </div>
 
       <div className="flex-1 w-full max-w-6xl flex flex-col md:flex-row gap-8 items-center justify-center z-10">
@@ -243,14 +450,20 @@ export const Lobby = () => {
 
                 {/* Multiplayer */}
                 <button 
-                  className="bg-slate-800/80 backdrop-blur-md border border-slate-700 rounded-3xl p-6 flex flex-col justify-between hover:bg-slate-700 transition-colors group relative overflow-hidden"
-                  onClick={() => alert("Multiplayer coming soon!")}
+                  className="backdrop-blur-md border rounded-3xl p-6 flex flex-col justify-between transition-colors group relative overflow-hidden bg-blue-900/50 border-blue-500/50 hover:bg-blue-900/80 cursor-pointer"
+                  onClick={() => {
+                    setMpMode('menu');
+                    setJoinPin('');
+                    setRoomPin(null);
+                    setIsSearching(false);
+                    setActiveView('multiplayer');
+                  }}
                 >
                   <div className="z-10 text-left">
-                    <h3 className="text-xl font-bold text-slate-300 group-hover:text-white transition-colors">Multiplayer</h3>
-                    <span className="text-[10px] bg-slate-900 px-2 py-1 rounded text-slate-400 mt-1 inline-block">COMING SOON</span>
+                    <h3 className="text-xl font-bold transition-colors text-blue-300 group-hover:text-white">Multiplayer</h3>
+                    <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-1 rounded mt-1 inline-block border border-blue-500/30">ONLINE</span>
                   </div>
-                  <Users className="self-end text-slate-600 group-hover:text-blue-400 transition-colors" size={24} />
+                  <Users className="self-end transition-colors text-blue-400 group-hover:text-white" size={24} />
                 </button>
 
                 {/* Stage Select */}
@@ -289,10 +502,13 @@ export const Lobby = () => {
                   <Trophy className="self-end text-slate-600 group-hover:text-yellow-400 transition-colors" size={24} />
                 </button>
 
-                {/* Settings / Misc */}
-                <button className="col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-slate-500 hover:text-slate-300 transition-colors">
-                  <span className="text-sm font-medium">Daily Rewards Available!</span>
-                  <Trophy size={16} className="text-yellow-600" />
+                {/* Credits / Misc */}
+                <button 
+                  onClick={() => setShowCreditsModal(true)}
+                  className="col-span-2 bg-slate-900/50 border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-slate-500 hover:text-slate-300 transition-colors hover:bg-slate-900/80 cursor-pointer"
+                >
+                  <span className="text-sm font-medium">Credits</span>
+                  <Info size={16} className="text-slate-600" />
                 </button>
               </motion.div>
             )}
@@ -385,6 +601,136 @@ export const Lobby = () => {
               </motion.div>
             )}
 
+            {/* MULTIPLAYER LOBBY */}
+            {activeView === 'multiplayer' && (
+              <motion.div 
+                key="multiplayer"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="flex flex-col h-full bg-slate-900/80 backdrop-blur-xl border border-blue-500/30 rounded-3xl p-6 relative overflow-hidden"
+              >
+                {/* Background Grid */}
+                <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(59,130,246,0.2)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.2)_1px,transparent_1px)] bg-[length:20px_20px]"></div>
+
+                <div className="flex items-center justify-between mb-6 z-10">
+                  <div className="flex items-center gap-2">
+                    <Users className="text-blue-400" />
+                    <div>
+                      <h3 className="text-2xl font-bold text-blue-100">Online Battle</h3>
+                      <p className="text-xs text-blue-400">Find opponents worldwide</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setActiveView('menu')} className="text-slate-400 hover:text-white text-sm">Back</button>
+                </div>
+                
+                <div className="flex-1 flex flex-col items-center justify-center z-10 gap-6">
+                    <div className="w-32 h-32 rounded-full border-4 border-blue-500/30 flex items-center justify-center relative animate-pulse">
+                        <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-xl"></div>
+                        <Swords size={48} className="text-blue-400" />
+                    </div>
+                    
+                    <div className="text-center">
+                        <h4 className="text-xl font-bold text-white mb-2">Ready to Duel?</h4>
+                        <p className="text-sm text-slate-400 max-w-xs">
+                            Matchmaking will search for other players with similar skill levels.
+                        </p>
+                    </div>
+
+                    <div className="w-full flex flex-col items-center">
+                        {mpMode === 'menu' && (
+                            <div className="flex gap-4 w-full">
+                                <button 
+                                    onClick={handleCreateRoom}
+                                    className="flex-1 px-4 py-6 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold shadow-lg shadow-blue-900/50 transition-all hover:scale-105 active:scale-95 flex flex-col items-center gap-2"
+                                >
+                                    <Swords size={32} />
+                                    <span className="text-sm tracking-wider">CREATE ROOM</span>
+                                </button>
+                                <button 
+                                    onClick={() => setMpMode('join')}
+                                    className="flex-1 px-4 py-6 bg-slate-700 hover:bg-slate-600 text-white rounded-2xl font-bold shadow-lg shadow-slate-900/50 transition-all hover:scale-105 active:scale-95 flex flex-col items-center gap-2 border border-slate-600"
+                                >
+                                    <Users size={32} />
+                                    <span className="text-sm tracking-wider">JOIN ROOM</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {mpMode === 'host' && (
+                            <div className="flex flex-col items-center gap-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex flex-col items-center gap-2">
+                                    <span className="text-slate-400 text-xs uppercase tracking-widest font-bold">Game PIN</span>
+                                    <div className="text-6xl font-black tracking-[0.2em] text-white bg-white/10 px-8 py-4 rounded-2xl border border-white/20 select-all shadow-[0_0_30px_rgba(59,130,246,0.2)]">
+                                        {roomPin}
+                                    </div>
+                                </div>
+                                
+                                <div className="flex items-center gap-3 text-blue-300 animate-pulse bg-blue-500/10 px-4 py-2 rounded-full border border-blue-500/20">
+                                    <Loader2 className="animate-spin" size={16} />
+                                    <span className="text-sm font-bold tracking-wide">Waiting for players...</span>
+                                </div>
+
+                                <button 
+                                    onClick={handleCancelSearch}
+                                    className="text-slate-500 hover:text-white text-sm font-bold transition-colors"
+                                >
+                                    CANCEL
+                                </button>
+                            </div>
+                        )}
+
+                        {mpMode === 'join' && (
+                            <div className="flex flex-col items-center gap-4 w-full max-w-xs animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="w-full">
+                                    <label className="text-slate-400 text-xs uppercase tracking-widest font-bold mb-2 block text-center">Enter Game PIN</label>
+                                    <input 
+                                        type="text" 
+                                        maxLength={6}
+                                        value={joinPin}
+                                        onChange={(e) => setJoinPin(e.target.value.replace(/\D/g,''))}
+                                        placeholder="000000"
+                                        className="w-full bg-black/40 border border-slate-600 rounded-xl px-4 py-4 text-center text-4xl font-black tracking-[0.2em] text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-800"
+                                    />
+                                </div>
+
+                                {isSearching ? (
+                                    <div className="flex items-center gap-2 text-blue-300 animate-pulse my-2">
+                                        <Loader2 className="animate-spin" size={20} />
+                                        <span className="font-bold tracking-wider">{searchStatus}</span>
+                                    </div>
+                                ) : (
+                                    <button 
+                                        onClick={handleJoinRoom}
+                                        disabled={joinPin.length !== 6}
+                                        className="w-full py-4 bg-green-600 hover:bg-green-500 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-white rounded-xl font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                                    >
+                                        ENTER
+                                    </button>
+                                )}
+                                
+                                {!isSearching && (
+                                    <button 
+                                        onClick={() => { setMpMode('menu'); setJoinPin(''); }}
+                                        className="text-slate-500 hover:text-white text-sm font-bold transition-colors mt-2"
+                                    >
+                                        BACK
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="mt-auto pt-4 border-t border-white/5 z-10">
+                    <div className="flex justify-between text-xs text-slate-500">
+                        <span>Online Players: <b className="text-green-400">1,240</b></span>
+                        <span>Server: <b className="text-slate-300">US-East</b></span>
+                    </div>
+                </div>
+              </motion.div>
+            )}
+
             {/* GALLERY */}
             {activeView === 'gallery' && (
               <motion.div 
@@ -394,50 +740,65 @@ export const Lobby = () => {
                 exit={{ opacity: 0, x: -20 }}
                 className="flex flex-col h-full bg-slate-900/80 backdrop-blur-xl border border-slate-700 rounded-3xl p-6"
               >
-                <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center justify-between mb-4">
                   <div>
                     <h3 className="text-2xl font-bold">Art Gallery</h3>
-                    <p className="text-xs text-slate-400">Unlocked: <span className="text-yellow-400">{unlockedGalleryArts.length}</span></p>
+                    <p className="text-xs text-slate-400">Unlocked: <span className="text-yellow-400">ALL</span></p>
                   </div>
-                  <button onClick={() => setActiveView('menu')} className="text-slate-400 hover:text-white text-sm">Back</button>
+                  <button onClick={() => { setActiveView('menu'); setSearchTerm(''); }} className="text-slate-400 hover:text-white text-sm">Back</button>
+                </div>
+
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                  <input 
+                    type="text" 
+                    placeholder="Search Digimon..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-slate-950/50 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:outline-none focus:border-yellow-500 transition-colors"
+                  />
                 </div>
                 
-                <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 gap-4">
-                  {galleryDigimon.map((d, i) => {
-                    const isUnlocked = unlockedGalleryArts.includes(d.name);
+                <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+                  {galleryDigimon.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase())).map((d, i) => {
+                    const isUnlocked = true; // unlockedGalleryArts.includes(d.name);
                     return (
                       <div 
                         key={i} 
                         onClick={() => isUnlocked && setViewingGalleryItem(d)}
-                        className={`p-4 rounded-xl border-2 flex flex-col items-center relative overflow-hidden transition-all group ${
+                        className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all group ${
                         isUnlocked 
-                        ? 'bg-slate-900 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.1)] cursor-pointer hover:shadow-[0_0_25px_rgba(234,179,8,0.3)] hover:border-yellow-400' 
-                        : 'bg-slate-950 border-slate-800 opacity-50 cursor-not-allowed'
+                        ? 'bg-slate-900/50 border-slate-700 hover:bg-slate-800 hover:border-yellow-500/50 cursor-pointer' 
+                        : 'bg-slate-950/30 border-slate-800 opacity-50 cursor-not-allowed'
                       }`}>
-                        {isUnlocked ? (
-                          <>
-                            <div className="absolute inset-0 bg-gradient-to-t from-yellow-900/20 to-transparent"></div>
-                            <div className="w-full aspect-square relative mb-2 flex items-center justify-center">
-                              <img src={d.img} alt={d.name} className="w-full h-full object-contain drop-shadow-xl group-hover:scale-110 transition-transform duration-500" />
-                            </div>
-                            <div className="flex flex-col items-center relative z-10">
-                              <span className="text-sm font-black italic text-yellow-500">{d.name}</span>
-                              <span className="text-[10px] text-yellow-700 font-bold uppercase tracking-widest">MASTERED</span>
-                            </div>
-                            <div className="absolute top-2 right-2 text-yellow-500">
-                              <Trophy size={12} />
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center h-full gap-2">
-                             <Lock size={24} className="text-slate-700" />
-                             <span className="text-xs text-slate-700 font-bold text-center">Win with {d.name} to unlock</span>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-16 h-16 rounded-lg flex items-center justify-center p-1 ${isUnlocked ? 'bg-slate-800' : 'bg-slate-900'}`}>
+                            {isUnlocked ? (
+                               <img src={d.img} alt={d.name} className="w-full h-full object-contain" />
+                            ) : (
+                               <Lock size={16} className="text-slate-700" />
+                            )}
                           </div>
+                          
+                          <div className="flex flex-col">
+                            <span className={`text-lg font-bold ${isUnlocked ? 'text-white group-hover:text-yellow-400' : 'text-slate-600'}`}>
+                                {d.name}
+                            </span>
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                                {isUnlocked ? 'Mastered Art' : 'Locked'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isUnlocked && (
+                            <div className="w-10 h-10 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500 group-hover:bg-yellow-500 group-hover:text-white transition-all">
+                                <Trophy size={18} />
+                            </div>
                         )}
                       </div>
                     );
                   })}
-                  {galleryDigimon.length === 0 && <div className="col-span-2 text-center text-slate-500">Loading Art Data...</div>}
+                  {galleryDigimon.length === 0 && <div className="text-center text-slate-500 py-8">Loading Art Data...</div>}
                 </div>
               </motion.div>
             )}

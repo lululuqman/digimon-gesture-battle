@@ -21,6 +21,13 @@ interface GameStore {
   // Battle State
   gameState: BattleState;
   selectedStage: BattleStage;
+  
+  // Multiplayer State
+  isMultiplayer: boolean;
+  roomId: string | null;
+  playerId: string;
+  opponentId: string | null;
+
   playerHP: number;
   enemyHP: number;
   playerDigimon: Digimon | null;
@@ -40,6 +47,7 @@ interface GameStore {
   setEntitlement: (entitlement: UserEntitlement) => void;
   setGameState: (state: BattleState) => void;
   setSelectedStage: (stage: BattleStage) => void;
+  setMultiplayerState: (state: { isMultiplayer: boolean; roomId: string | null; opponentId: string | null }) => void;
   setPlayerDigimon: (digimon: Digimon | null) => void;
   setEnemyDigimon: (digimon: Digimon | null) => void;
   updateHP: (playerDelta: number, enemyDelta: number) => void;
@@ -55,6 +63,8 @@ interface GameStore {
   resetGame: () => void;
 }
 
+const generateId = () => Math.random().toString(36).substring(2, 15);
+
 export const useGameStore = create<GameStore>()(
   persist(
     (set) => ({
@@ -63,6 +73,13 @@ export const useGameStore = create<GameStore>()(
       entitlement: null,
       gameState: 'title',
       selectedStage: 'arena',
+      
+      // Multiplayer defaults
+      isMultiplayer: false,
+      roomId: null,
+      playerId: generateId(), // Persistent ID for this session
+      opponentId: null,
+
       playerHP: 100,
       enemyHP: 100,
       playerDigimon: null,
@@ -81,6 +98,7 @@ export const useGameStore = create<GameStore>()(
       setEntitlement: (entitlement) => set({ entitlement }),
       setGameState: (gameState) => set({ gameState }),
       setSelectedStage: (selectedStage) => set({ selectedStage }),
+      setMultiplayerState: (state) => set(state),
       setPlayerDigimon: (playerDigimon) => set({ playerDigimon }),
       setEnemyDigimon: (enemyDigimon) => set({ enemyDigimon }),
       updateHP: (p, e) => set((s) => ({ 
@@ -106,9 +124,8 @@ export const useGameStore = create<GameStore>()(
         playerGesture: 'none', 
         enemyGesture: 'none',
         isProcessingTurn: false,
-        playerWinStreak: 0,
         battleLogs: [],
-        commentary: "Battle Start!"
+        commentary: "Ready to Battle?"
       }),
 
       resetGame: () => set({
@@ -122,17 +139,14 @@ export const useGameStore = create<GameStore>()(
         isProcessingTurn: false,
         playerWinStreak: 0,
         battleLogs: [],
-        commentary: "Ready to Battle?"
+        commentary: "Ready to Battle?",
+        isMultiplayer: false,
+        roomId: null,
+        opponentId: null
       })
     }),
     {
-      name: 'digimon-game-storage',
-      partialize: (state) => ({ 
-        encounteredDigimon: state.encounteredDigimon,
-        unlockedGalleryArts: state.unlockedGalleryArts,
-        userDigimon: state.userDigimon,
-        playerWinStreak: state.playerWinStreak
-      }),
+      name: 'digimon-battle-storage',
     }
   )
 );
