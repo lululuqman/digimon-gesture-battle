@@ -103,7 +103,7 @@ const GalleryCardView = ({ digimon, onClose }: { digimon: Digimon; onClose: () =
 };
 
 export const Lobby = () => {
-  const { playerDigimon, setPlayerDigimon, setEnemyDigimon, setGameState, selectedStage, setSelectedStage, encounteredDigimon, unlockDigimon, unlockedGalleryArts, resetBattle, entitlement, setEntitlement, playerId, setMultiplayerState } = useGameStore();
+  const { playerDigimon, setPlayerDigimon, setEnemyDigimon, setGameState, selectedStage, setSelectedStage, unlockDigimon, resetBattle, entitlement, setEntitlement, playerId, setMultiplayerState } = useGameStore();
   const [loading, setLoading] = useState(false);
   const [galleryDigimon, setGalleryDigimon] = useState<Digimon[]>([]);
   const [activeView, setActiveView] = useState<'menu' | 'stages' | 'gallery' | 'digidex' | 'multiplayer'>('menu');
